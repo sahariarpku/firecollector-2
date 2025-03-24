@@ -1,10 +1,13 @@
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Create storage bucket for PDFs
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('pdfs', 'pdfs', false)
-ON CONFLICT (id) DO NOTHING;
+-- Create storage bucket for PDFs with increased file size limit
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('pdfs', 'pdfs', false, 104857600, ARRAY['application/pdf'])
+ON CONFLICT (id) DO UPDATE
+SET file_size_limit = 104857600,
+    allowed_mime_types = ARRAY['application/pdf'];
 
 -- Drop existing policies if they exist
 DROP POLICY IF EXISTS "Public Access" ON storage.objects;

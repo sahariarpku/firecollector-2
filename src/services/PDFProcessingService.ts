@@ -111,15 +111,22 @@ export class PDFProcessingService {
     try {
       console.log('Starting AI analysis with text length:', markdown.length);
       
-      // Take first 2000 characters for initial analysis to get basic metadata
-      const initialChunk = markdown.slice(0, 2000);
+      // Take first 3000 characters for initial analysis to get basic metadata
+      const initialChunk = markdown.slice(0, 3000);
       
-      const initialPrompt = `Extract only the following metadata from this academic paper text. Return ONLY a JSON object with these fields (omit any fields you don't find):
+      const initialPrompt = `Analyze this academic paper text and extract the following metadata. Return ONLY a JSON object with these fields (omit any fields you don't find):
 {
   "title": "paper title",
   "authors": "author names",
-  "doi": "DOI if present"
+  "doi": "DOI if present",
+  "year": "publication year (as a number)"
 }
+
+Important:
+- Look for the title at the beginning of the text
+- Authors are usually listed after the title
+- DOI might be in the format "doi: 10.xxxx/xxxxx" or "https://doi.org/10.xxxx/xxxxx"
+- Year is usually a 4-digit number near the beginning of the paper
 
 Text:
 ${initialChunk}`;
@@ -137,22 +144,22 @@ ${initialChunk}`;
         console.warn('Failed to parse metadata JSON:', e);
       }
 
-      // Take first 4000 characters for content analysis
-      const contentChunk = markdown.slice(0, 4000);
+      // Take first 6000 characters for content analysis
+      const contentChunk = markdown.slice(0, 6000);
       
-      const contentPrompt = `Analyze this academic paper excerpt and extract:
-1. Background/Abstract summary
-2. Research questions
-3. Major findings
-4. Future research suggestions
-
-Return ONLY a JSON object like this (omit any fields you don't find):
+      const contentPrompt = `Analyze this academic paper excerpt and extract the following information. Return ONLY a JSON object with these fields (omit any fields you don't find):
 {
-  "background": "brief summary",
-  "research_question": "main research questions",
-  "major_findings": "key findings",
-  "suggestions": "future research suggestions"
+  "background": "brief summary of the paper's background and context",
+  "research_question": "main research questions or objectives",
+  "major_findings": "key findings and results",
+  "suggestions": "future research suggestions or implications"
 }
+
+Important:
+- Background: Look for sections like "Introduction", "Background", or "Abstract"
+- Research Question: Look for explicit questions or objectives
+- Major Findings: Look for results, conclusions, or key findings
+- Suggestions: Look for future work, implications, or recommendations
 
 Text:
 ${contentChunk}`;
@@ -173,7 +180,8 @@ ${contentChunk}`;
       // Merge metadata and content
       const result: ExtractedData = {
         ...metadata,
-        ...content
+        ...content,
+        full_text: markdown // Store the full text for reference
       };
 
       console.log('AI analysis complete with results:', result);
@@ -184,7 +192,8 @@ ${contentChunk}`;
       return {
         title: '',
         authors: 'Unknown',
-        year: new Date().getFullYear()
+        year: new Date().getFullYear(),
+        full_text: markdown
       };
     }
   }

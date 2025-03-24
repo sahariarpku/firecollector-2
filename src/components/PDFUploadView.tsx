@@ -34,9 +34,13 @@ type UploadedFile = {
 };
 
 // Helper function to sanitize text for database
-const sanitizeText = (text: string | null | undefined) => {
-  if (!text) return null;
-  return text
+const sanitizeText = (text: string | null | undefined | number): string | null => {
+  if (text === null || text === undefined) return null;
+  
+  // Convert to string if it's a number
+  const textStr = String(text);
+  
+  return textStr
     .replace(/\\u[0-9a-fA-F]{4}/g, '')
     .replace(/[\u0000-\u0008\u000B-\u000C\u000E-\u001F]/g, '')
     .normalize('NFKD')
@@ -47,6 +51,9 @@ interface PDFUploadViewProps {
   existingBatchId?: string;
   existingBatchName?: string;
 }
+
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB in bytes
+const MAX_FILES = 100; // Maximum number of files per batch
 
 const PDFUploadView = ({ existingBatchId, existingBatchName }: PDFUploadViewProps) => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -60,9 +67,25 @@ const PDFUploadView = ({ existingBatchId, existingBatchName }: PDFUploadViewProp
     accept: {
       'application/pdf': ['.pdf'],
     },
+    maxSize: MAX_FILE_SIZE,
+    maxFiles: MAX_FILES,
     noClick: true,
     noKeyboard: true,
-    onDrop: (acceptedFiles) => {
+    onDrop: (acceptedFiles, rejectedFiles) => {
+      // Handle rejected files
+      rejectedFiles.forEach(({ file, errors }) => {
+        errors.forEach(error => {
+          if (error.code === 'file-too-large') {
+            toast.error(`${file.name} is too large. Maximum size is 100MB.`);
+          } else if (error.code === 'too-many-files') {
+            toast.error(`You can only upload up to ${MAX_FILES} files at once.`);
+          } else if (error.code === 'file-invalid-type') {
+            toast.error(`${file.name} is not a valid PDF file.`);
+          }
+        });
+      });
+
+      // Handle accepted files
       const newFiles = acceptedFiles.map(file => ({
         file,
         id: Math.random().toString(36).substr(2, 9),
@@ -71,6 +94,13 @@ const PDFUploadView = ({ existingBatchId, existingBatchName }: PDFUploadViewProp
         processingStatus: 'pending' as ProcessingStatus,
         processingProgress: 0
       }));
+
+      // Check if adding new files would exceed the limit
+      if (files.length + newFiles.length > MAX_FILES) {
+        toast.error(`You can only upload up to ${MAX_FILES} files at once.`);
+        return;
+      }
+
       setFiles(prev => [...prev, ...newFiles]);
     }
   });
@@ -113,14 +143,35 @@ const PDFUploadView = ({ existingBatchId, existingBatchName }: PDFUploadViewProp
     }
   };
 
-  const uploadAndProcessFiles = async () => {
+  // Add file validation before upload
+  const validateFiles = () => {
     if (files.length === 0) {
       toast.error('Please add at least one PDF file');
-      return;
+      return false;
+    }
+
+    if (files.length > MAX_FILES) {
+      toast.error(`You can only upload up to ${MAX_FILES} files at once.`);
+      return false;
+    }
+
+    for (const fileObj of files) {
+      if (fileObj.file.size > MAX_FILE_SIZE) {
+        toast.error(`${fileObj.file.name} is too large. Maximum size is 100MB.`);
+        return false;
+      }
     }
 
     if (!batchName.trim() && !existingBatchId) {
       toast.error('Please provide a batch name');
+      return false;
+    }
+
+    return true;
+  };
+
+  const uploadAndProcessFiles = async () => {
+    if (!validateFiles()) {
       return;
     }
 
@@ -188,7 +239,7 @@ const PDFUploadView = ({ existingBatchId, existingBatchName }: PDFUploadViewProp
               filename: fileObj.file.name,
               title: sanitizeText(processedFile.extractedData?.title),
               authors: sanitizeText(processedFile.extractedData?.authors),
-              year: processedFile.extractedData?.year,
+              year: processedFile.extractedData?.year || new Date().getFullYear(),
               doi: sanitizeText(processedFile.extractedData?.doi),
               background: sanitizeText(processedFile.extractedData?.background),
               research_question: sanitizeText(processedFile.extractedData?.research_question),
@@ -285,6 +336,10 @@ const PDFUploadView = ({ existingBatchId, existingBatchName }: PDFUploadViewProp
             <h2 className="text-xl font-semibold mb-4">PDF Analysis</h2>
             <p className="text-sm text-gray-600 mb-6">
               Upload PDF files to extract data and analyze them using AI.
+              <br />
+              <span className="text-xs text-gray-500">
+                Maximum file size: 100MB | Maximum files per batch: {MAX_FILES}
+              </span>
             </p>
             
             <div className="mb-4">
@@ -331,8 +386,13 @@ const PDFUploadView = ({ existingBatchId, existingBatchName }: PDFUploadViewProp
         
         {files.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Selected Files</h3>
-            <div className="space-y-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-700">Selected Files</h3>
+              <span className="text-xs text-gray-500">
+                {files.length} / {MAX_FILES} files
+              </span>
+            </div>
+            <div className="space-y-3 max-h-[400px] overflow-y-auto">
               {files.map((fileObj) => (
                 <div 
                   key={fileObj.id} 
